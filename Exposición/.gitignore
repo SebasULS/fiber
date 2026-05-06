@@ -1,0 +1,49 @@
+# Binarios compilados
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Binario de la aplicación
+/bin/
+/dist/
+
+# Archivos de prueba
+*.test
+
+# Caché de cobertura de tests
+*.out
+coverage.html
+
+# Dependencias de Go (se regeneran con go mod tidy)
+vendor/
+
+# Variables de entorno - NUNCA subir al repo
+.env
+.env.local
+.env.*.local
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs y editores
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Base de datos local
+*.db
+*.sqlite
+
+# Temporales
+tmp/
+temp/
