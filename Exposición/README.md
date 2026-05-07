@@ -10,11 +10,12 @@
 2. [Go — El Lenguaje](#go--el-lenguaje)
 3. [Fiber — El Framework](#fiber--el-framework)
 4. [Fiber + Scaffolding: La Combinación Perfecta](#fiber--scaffolding-la-combinación-perfecta)
-5. [Instalación de Go](#instalación-de-go)
-6. [Instalación de Fiber](#instalación-de-fiber)
-7. [Estructura del Proyecto](#estructura-del-proyecto)
-8. [Cómo correr el proyecto](#cómo-correr-el-proyecto)
-9. [Endpoints disponibles](#endpoints-disponibles)
+5. [Base de Datos con GORM + SQLite](#base-de-datos-con-gorm--sqlite)
+6. [Instalación de Go](#instalación-de-go)
+7. [Instalación de Fiber](#instalación-de-fiber)
+8. [Estructura del Proyecto](#estructura-del-proyecto)
+9. [Cómo correr el proyecto](#cómo-correr-el-proyecto)
+10. [Endpoints disponibles](#endpoints-disponibles)
 
 ---
 
@@ -39,13 +40,15 @@
 ### Capas del Scaffolding en este proyecto
 
 ```
-cmd/          → Punto de entrada (main.go)
+cmd/            → Punto de entrada (main.go)
 internal/
-  config/     → Variables de entorno y configuración
-  models/     → Estructuras de datos (entidades)
-  handlers/   → Lógica de cada endpoint (controladores)
-  middleware/ → Funciones que se ejecutan entre request y response
-  routes/     → Registro y agrupación de todas las rutas
+  config/       → Variables de entorno y configuración
+  database/     → Conexión a la BD y migraciones automáticas
+  models/       → Estructuras de datos con tags GORM y JSON
+  repository/   → Capa de acceso a datos (CRUD puro sobre la BD)
+  handlers/     → Lógica HTTP: recibe request, llama al repo, devuelve JSON
+  middleware/   → Funciones que se ejecutan entre request y response
+  routes/       → Registro y agrupación de todas las rutas
 ```
 
 Cada capa tiene **una única responsabilidad**. Esto sigue el principio **SRP** (Single Responsibility Principle).
@@ -292,6 +295,99 @@ config/         →                    fiber.Config{}
 
 ---
 
+## Base de Datos con GORM + SQLite
+
+El proyecto usa **GORM** como ORM y **SQLite** como motor de base de datos. Los registros se guardan en un archivo `carrycoders.db` generado automáticamente al iniciar el servidor.
+
+
+### ¿Qué es GORM?
+
+**GORM** es el ORM (*Object-Relational Mapper*) más popular de Go. Convierte los structs de Go en tablas SQL y permite hacer consultas sin escribir SQL puro:
+
+```go
+// GORM lee los tags del struct y crea la tabla automáticamente
+type User struct {
+    ID        uint      `json:"id"    gorm:"primaryKey;autoIncrement"`
+    Name      string    `json:"name"  gorm:"not null"`
+    Email     string    `json:"email" gorm:"uniqueIndex;not null"`
+    Age       int       `json:"age"`
+    CreatedAt time.Time `json:"created_at"`
+    UpdatedAt time.Time `json:"updated_at"`
+}
+```
+
+### AutoMigrate — El esquema nunca se rompe
+
+Al arrancar el servidor, GORM ejecuta `AutoMigrate` que crea o actualiza la tabla sin perder datos:
+
+```go
+// internal/database/database.go
+DB.AutoMigrate(&models.User{})
+// → Si la tabla no existe: la crea
+// → Si le falta una columna: la agrega
+// → Si ya está al día: no hace nada
+```
+
+### Patrón Repository — Separar el acceso a datos
+
+El scaffolding agrega la capa **Repository** entre el Handler y la BD. Esto significa que el handler nunca toca la BD directamente:
+
+```
+Request HTTP
+     ↓
+UserHandler          ←  solo sabe de HTTP (Fiber)
+     ↓  llama a
+UserRepository       ←  solo sabe de SQL (GORM)
+     ↓  usa
+   gorm.DB           ←  solo sabe de SQLite
+     ↓  escribe en
+  carrycoders.db     ←  archivo en disco
+```
+
+Beneficios de esta separación:
+- Cambiar de SQLite a PostgreSQL solo requiere editar `database.go` y el driver
+- Los handlers se pueden testear con un repositorio simulado (*mock*)
+- La lógica de consultas está centralizada en un solo lugar
+
+### Inyección de dependencias
+
+La BD se inyecta desde `main.go` hacia abajo, nunca se usa una variable global en los handlers:
+
+```go
+// cmd/main.go — punto de arranque
+database.Connect(cfg.DBPath)   // abre carrycoders.db
+routes.Setup(app, database.DB) // pasa la conexión
+
+// internal/routes/routes.go — cableado
+userRepo    := repository.NewUserRepository(db)     // BD → Repo
+userHandler := handlers.NewUserHandler(userRepo)     // Repo → Handler
+
+// internal/handlers/user_handler.go — handler con repo inyectado
+type UserHandler struct {
+    repo *repository.UserRepository
+}
+```
+
+### Tags de GORM en el modelo
+
+```go
+gorm:"primaryKey;autoIncrement"  // clave primaria con autoincremento
+gorm:"not null"                  // columna obligatoria (NOT NULL en SQL)
+gorm:"uniqueIndex;not null"      // columna única con índice (como un email)
+```
+
+### Operaciones GORM utilizadas
+
+| Operación | Método GORM | SQL equivalente |
+|---|---|---|
+| Obtener todos | `db.Find(&users)` | `SELECT * FROM users` |
+| Obtener uno | `db.First(&user, id)` | `SELECT * FROM users WHERE id=? LIMIT 1` |
+| Crear | `db.Create(&user)` | `INSERT INTO users (...)` |
+| Actualizar | `db.Save(&user)` | `UPDATE users SET ... WHERE id=?` |
+| Eliminar | `db.Delete(&user, id)` | `DELETE FROM users WHERE id=?` |
+
+---
+
 ## Instalación de Go
 
 ### Windows
@@ -375,21 +471,26 @@ go run main.go
 ```
 Exposición/
 ├── cmd/
-│   └── main.go                  ← Punto de entrada, arranca el servidor
+│   └── main.go                      ← Arranca el servidor e inyecta la BD
 ├── internal/
 │   ├── config/
-│   │   └── config.go            ← Lee variables de entorno (PORT, APP_ENV)
+│   │   └── config.go                ← Lee PORT, APP_ENV, DB_PATH
+│   ├── database/
+│   │   └── database.go              ← Abre SQLite y ejecuta AutoMigrate
 │   ├── handlers/
-│   │   ├── health_handler.go    ← GET /health — estado del servidor
-│   │   └── user_handler.go      ← CRUD de usuarios
+│   │   ├── health_handler.go        ← GET /health — estado del servidor
+│   │   └── user_handler.go          ← Handlers HTTP (usan UserRepository)
 │   ├── middleware/
-│   │   └── logger.go            ← Middleware que loggea cada petición
+│   │   └── logger.go                ← Middleware que loggea cada petición
 │   ├── models/
-│   │   └── user.go              ← Struct User y CreateUserRequest
+│   │   └── user.go                  ← Struct User con tags GORM y JSON
+│   ├── repository/
+│   │   └── user_repository.go       ← CRUD directo sobre la BD con GORM
 │   └── routes/
-│       └── routes.go            ← Registra todos los endpoints
-├── go.mod                       ← Módulo y dependencias
-├── go.sum                       ← Hash de dependencias (auto-generado)
+│       └── routes.go                ← Registra endpoints y cablea dependencias
+├── carrycoders.db                   ← Archivo SQLite (generado al correr)
+├── go.mod                           ← Módulo y dependencias
+├── go.sum                           ← Hash de dependencias (auto-generado)
 ├── .gitignore
 └── README.md
 ```
@@ -400,19 +501,25 @@ Exposición/
 Cliente HTTP
     │
     ▼
-fiber.App  (cmd/main.go)
+fiber.App      (cmd/main.go)
     │
     ▼
-Middleware (middleware/logger.go)  ← se ejecuta primero
+Middleware     (middleware/logger.go)        ← loggea método, ruta y latencia
     │
     ▼
-Router     (routes/routes.go)      ← decide qué handler usar
+Router         (routes/routes.go)            ← decide qué handler usar
     │
     ▼
-Handler    (handlers/user_handler.go) ← lógica de negocio
+UserHandler    (handlers/user_handler.go)    ← parsea request, llama al repo
     │
     ▼
-Model      (models/user.go)        ← estructura de datos
+UserRepository (repository/user_repository.go) ← ejecuta la consulta GORM
+    │
+    ▼
+gorm.DB        (database/database.go)        ← SQL sobre SQLite
+    │
+    ▼
+carrycoders.db                               ← archivo en disco
     │
     ▼
 Respuesta JSON al cliente
@@ -456,6 +563,9 @@ PORT=:8080 go run cmd/main.go
 
 # Cambiar entorno
 APP_ENV=production go run cmd/main.go
+
+# Cambiar la ruta del archivo SQLite (por defecto carrycoders.db)
+DB_PATH=./data/mydb.db go run cmd/main.go
 ```
 
 ---
@@ -488,6 +598,7 @@ curl http://localhost:3000/health
 | `GET` | `/api/v1/users` | Obtener todos los usuarios |
 | `GET` | `/api/v1/users/:id` | Obtener usuario por ID |
 | `POST` | `/api/v1/users` | Crear nuevo usuario |
+| `PUT` | `/api/v1/users/:id` | Actualizar usuario por ID |
 | `DELETE` | `/api/v1/users/:id` | Eliminar usuario por ID |
 
 #### Obtener todos los usuarios
@@ -515,13 +626,39 @@ curl -X POST http://localhost:3000/api/v1/users \
 ```
 
 ```json
-{ "id": 3, "name": "Carlos", "email": "carlos@example.com", "age": 22 }
+{
+  "id": 3,
+  "name": "Carlos",
+  "email": "carlos@example.com",
+  "age": 22,
+  "created_at": "2026-05-07T10:00:00Z",
+  "updated_at": "2026-05-07T10:00:00Z"
+}
+```
+
+#### Actualizar un usuario
+
+```bash
+curl -X PUT http://localhost:3000/api/v1/users/3 \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Carlos Updated", "email": "carlos.new@example.com", "age": 23}'
+```
+
+```json
+{
+  "id": 3,
+  "name": "Carlos Updated",
+  "email": "carlos.new@example.com",
+  "age": 23,
+  "created_at": "2026-05-07T10:00:00Z",
+  "updated_at": "2026-05-07T10:05:00Z"
+}
 ```
 
 #### Eliminar un usuario
 
 ```bash
-curl -X DELETE http://localhost:3000/api/v1/users/1
+curl -X DELETE http://localhost:3000/api/v1/users/3
 # 204 No Content
 ```
 
@@ -529,8 +666,12 @@ curl -X DELETE http://localhost:3000/api/v1/users/1
 
 ## Tecnologías usadas
 
-- [Go 1.22+](https://go.dev/) — Lenguaje compilado, tipado estáticamente, concurrente
-- [Fiber v2](https://gofiber.io/) — Framework web ultrarrápido inspirado en Express.js
+| Tecnología | Versión | Rol |
+|---|---|---|
+| [Go](https://go.dev/) | 1.22+ | Lenguaje compilado, tipado estáticamente, concurrente |
+| [Fiber v2](https://gofiber.io/) | v2.52+ | Framework HTTP inspirado en Express.js |
+| [GORM](https://gorm.io/) | v1.31+ | ORM para Go, maneja migraciones y consultas |
+| [SQLite (pure Go)](https://github.com/glebarez/sqlite) | v1.11+ | Base de datos embebida sin CGO ni servidor externo |
 
 ---
 

@@ -1,21 +1,34 @@
 package handlers
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/carrycoders/exposicion/internal/models"
+	"github.com/carrycoders/exposicion/internal/repository"
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
 
-// Simulación de base de datos en memoria
-var users = []models.User{
-	{ID: 1, Name: "Alice García", Email: "alice@example.com", Age: 25},
-	{ID: 2, Name: "Bob Martínez", Email: "bob@example.com", Age: 30},
+// UserHandler agrupa los handlers de usuarios con su repositorio inyectado
+type UserHandler struct {
+	repo *repository.UserRepository
+}
+
+// NewUserHandler crea un UserHandler con el repositorio correspondiente
+func NewUserHandler(repo *repository.UserRepository) *UserHandler {
+	return &UserHandler{repo: repo}
 }
 
 // GetUsers devuelve todos los usuarios
-// GET /api/users
-func GetUsers(c *fiber.Ctx) error {
+// GET /api/v1/users
+func (h *UserHandler) GetUsers(c *fiber.Ctx) error {
+	users, err := h.repo.FindAll()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Error al obtener usuarios",
+		})
+	}
 	return c.JSON(fiber.Map{
 		"data":  users,
 		"total": len(users),
@@ -23,29 +36,33 @@ func GetUsers(c *fiber.Ctx) error {
 }
 
 // GetUser devuelve un usuario por ID
-// GET /api/users/:id
-func GetUser(c *fiber.Ctx) error {
-	id, err := strconv.Atoi(c.Params("id"))
+// GET /api/v1/users/:id
+func (h *UserHandler) GetUser(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "ID inválido",
 		})
 	}
 
-	for _, u := range users {
-		if u.ID == id {
-			return c.JSON(u)
+	user, err := h.repo.FindByID(uint(id))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "Usuario no encontrado",
+			})
 		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Error al buscar usuario",
+		})
 	}
 
-	return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-		"error": "Usuario no encontrado",
-	})
+	return c.JSON(user)
 }
 
-// CreateUser crea un nuevo usuario
-// POST /api/users
-func CreateUser(c *fiber.Ctx) error {
+// CreateUser crea un nuevo usuario y lo persiste en la BD
+// POST /api/v1/users
+func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
 	var req models.CreateUserRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -53,35 +70,64 @@ func CreateUser(c *fiber.Ctx) error {
 		})
 	}
 
-	newUser := models.User{
-		ID:    len(users) + 1,
-		Name:  req.Name,
-		Email: req.Email,
-		Age:   req.Age,
+	user, err := h.repo.Create(&req)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Error al crear usuario",
+		})
 	}
-	users = append(users, newUser)
 
-	return c.Status(fiber.StatusCreated).JSON(newUser)
+	return c.Status(fiber.StatusCreated).JSON(user)
 }
 
-// DeleteUser elimina un usuario por ID
-// DELETE /api/users/:id
-func DeleteUser(c *fiber.Ctx) error {
-	id, err := strconv.Atoi(c.Params("id"))
+// UpdateUser actualiza los datos de un usuario existente
+// PUT /api/v1/users/:id
+func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "ID inválido",
 		})
 	}
 
-	for i, u := range users {
-		if u.ID == id {
-			users = append(users[:i], users[i+1:]...)
-			return c.Status(fiber.StatusNoContent).Send(nil)
-		}
+	var req models.UpdateUserRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Cuerpo de petición inválido",
+		})
 	}
 
-	return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-		"error": "Usuario no encontrado",
-	})
+	user, err := h.repo.Update(uint(id), &req)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "Usuario no encontrado",
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Error al actualizar usuario",
+		})
+	}
+
+	return c.JSON(user)
 }
+
+// DeleteUser elimina un usuario por ID
+// DELETE /api/v1/users/:id
+func (h *UserHandler) DeleteUser(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "ID inválido",
+		})
+	}
+
+	if err := h.repo.Delete(uint(id)); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Error al eliminar usuario",
+		})
+	}
+
+	return c.Status(fiber.StatusNoContent).Send(nil)
+}
+
