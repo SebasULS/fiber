@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://sisacad-enrollments-backend.vercel.app/restful/enrollment-certificate/$1"
+      "destination": "https://sisacad-enrollments-backend.vercel.app/restful/$1"
     },
     {
       "source": "/(.*)",
