@@ -3,10 +3,6 @@
     {
       "source": "/api/(.*)",
       "destination": "https://sisacad-enrollments-backend.vercel.app/restful/$1"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
     }
   ]
 }
