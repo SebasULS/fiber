@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: 'https://sisacad-enrollments-backend.vercel.app/restful'
+  baseURL: '/api/restful'
 })
 
 export const getEnrollmentCertificates = (cui) => {

@@ -8,21 +8,34 @@ const student = ref(null)
 const loading = ref(false)
 const error = ref(null)
 
+// Flag para saber si ya se realizó al menos una búsqueda
+const hasSearched = ref(false)
+
 const fetchCertificates = async () => {
-  if (!cui.value.trim()) return
+  if (!cui.value || !cui.value.trim()) return
+  
   loading.value = true
   error.value = null
   certificates.value = []
   student.value = null
+  hasSearched.value = false
 
   try {
     const response = await getEnrollmentCertificates(cui.value)
-    const data = response.data
-    certificates.value = data.results
-    if (data.results.length > 0) {
-      student.value = data.results[0].student
+    
+    // Encadenamiento opcional (?.) y fallback para evitar leer 'undefined'
+    const data = response?.data
+    const results = data?.results || []
+
+    certificates.value = results
+    
+    if (results.length > 0 && results[0]?.student) {
+      student.value = results[0].student
     }
+    
+    hasSearched.value = true
   } catch (err) {
+    // Si falla el proxy o la API, capturamos el mensaje de forma segura
     error.value = err.response?.data?.detail || err.message || 'Error al consultar la API'
   } finally {
     loading.value = false
@@ -60,12 +73,12 @@ onMounted(() => {
 
     <div v-if="student && !loading" class="student-info">
       <h2>Datos del Estudiante</h2>
-      <p><strong>Nombre:</strong> {{ student.full_name }}</p>
-      <p><strong>CUI:</strong> {{ student.cui }}</p>
-      <p><strong>Correo:</strong> {{ student.email }}</p>
+      <p><strong>Nombre:</strong> {{ student?.full_name || 'No disponible' }}</p>
+      <p><strong>CUI:</strong> {{ student?.cui || 'No disponible' }}</p>
+      <p><strong>Correo:</strong> {{ student?.email || 'No disponible' }}</p>
     </div>
 
-    <div v-if="certificates.length > 0 && !loading" class="courses">
+    <div v-if="certificates?.length > 0 && !loading" class="courses">
       <h2>Cursos Matriculados ({{ certificates.length }})</h2>
       <table>
         <thead>
@@ -81,19 +94,26 @@ onMounted(() => {
         </thead>
         <tbody>
           <tr v-for="cert in certificates" :key="cert.id">
-            <td>{{ cert.workload.course.code }}</td>
-            <td>{{ cert.workload.course.name }}</td>
-            <td>{{ cert.workload.course.credits }}</td>
-            <td>{{ cert.workload.group }}</td>
-            <td>{{ cert.workload.laboratory }}</td>
-            <td>{{ cert.workload.teacher.full_name }}</td>
-            <td>{{ cert.workload.course.year_display }} - {{ cert.workload.course.semester_display }}</td>
+            <td>{{ cert?.workload?.course?.code }}</td>
+            <td>{{ cert?.workload?.course?.name }}</td>
+            <td>{{ cert?.workload?.course?.credits }}</td>
+            <td>{{ cert?.workload?.group || 'N/A' }}</td>
+            <td>{{ cert?.workload?.laboratory || 'N/A' }}</td>
+            <td>{{ cert?.workload?.teacher?.full_name || 'No asignado' }}</td>
+            <td>
+              {{ cert?.workload?.course?.year_display || '-' }} - 
+              {{ cert?.workload?.course?.semester_display || '-' }}
+            </td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <div v-if="certificates.length === 0 && !loading && !error && student === null" class="empty">
+    <div v-if="hasSearched && certificates?.length === 0 && !loading && !error" class="empty">
+      <p>No se encontraron constancias de matrícula para el CUI ingresado.</p>
+    </div>
+
+    <div v-if="!hasSearched && !loading && !error && !student" class="empty">
       <p>Ingrese un CUI para buscar constancias de matrícula.</p>
     </div>
   </div>
@@ -133,6 +153,11 @@ h2 {
   border-radius: 4px;
   font-size: 1rem;
   width: 260px;
+}
+
+.search-bar input:focus {
+  outline: none;
+  border-color: #3f51b5;
 }
 
 .search-bar button {
@@ -198,6 +223,7 @@ tbody tr:hover {
   padding: 1rem;
   border-radius: 6px;
   text-align: center;
+  margin-bottom: 1rem;
 }
 
 .loading {

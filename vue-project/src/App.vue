@@ -9,6 +9,6 @@ import EnrollmentCertificate from './components/EnrollmentCertificate.vue'
 <style>
 body {
   margin: 0;
-  background-color: #0f1ae8;
+  background-color: #e0e0ff;
 }
 </style>

@@ -1,8 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://sisacad-enrollments-backend.vercel.app/restful/$1"
+      "source": "/api/:path*",
+      "destination": "https://sisacad-enrollments-backend.vercel.app/:path*"
     }
   ]
 }
