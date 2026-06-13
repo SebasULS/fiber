@@ -1,11 +1,12 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: '/api/restful'
+  baseURL: '/api' // Así limpio, sin el 'restful' aquí
 })
 
 export const getEnrollmentCertificates = (cui) => {
-  return api.get('/enrollment-certificate/', {
+  // Ponemos la ruta completa que necesita la API externa desde aquí
+  return api.get('/restful/enrollment-certificate/', {
     params: { cui }
   })
 }

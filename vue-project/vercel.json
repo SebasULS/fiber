@@ -1,8 +1,9 @@
 {
+  "version": 2,
   "rewrites": [
     {
-      "source": "/api/restful/:path*",
-      "destination": "https://sisacad-enrollments-backend.vercel.app/restful/:path*"
+      "source": "/api/:path*",
+      "destination": "https://sisacad-enrollments-backend.vercel.app/:path*"
     }
   ]
 }
