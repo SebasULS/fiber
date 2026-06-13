@@ -1,12 +1,11 @@
 import axios from 'axios'
 
-// En local usamos el proxy de Vite, en producción usamos un proxy CORS intermediario
-const baseConfigURL = import.meta.env.PROD
-  ? 'https://api.allorigins.win/raw?url=https://sisacad-enrollments-backend.vercel.app/restful'
-  : '/api/restful'
-
 const api = axios.create({
-  baseURL: baseConfigURL
+  // En local usamos tu proxy de Vite.
+  // En producción, usamos un proxy que no se rompe con la estructura de Axios.
+  baseURL: import.meta.env.PROD
+    ? 'https://cors-anywhere.herokuapp.com/https://sisacad-enrollments-backend.vercel.app/restful'
+    : '/api/restful'
 })
 
 export const getEnrollmentCertificates = (cui) => {
