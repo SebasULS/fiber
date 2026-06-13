@@ -1,12 +1,16 @@
 import axios from 'axios'
 
+// En local usamos el proxy de Vite, en producción usamos un proxy CORS intermediario
+const baseConfigURL = import.meta.env.PROD
+  ? 'https://api.allorigins.win/raw?url=https://sisacad-enrollments-backend.vercel.app/restful'
+  : '/api/restful'
+
 const api = axios.create({
-  baseURL: '/api' // Así limpio, sin el 'restful' aquí
+  baseURL: baseConfigURL
 })
 
 export const getEnrollmentCertificates = (cui) => {
-  // Ponemos la ruta completa que necesita la API externa desde aquí
-  return api.get('/restful/enrollment-certificate/', {
+  return api.get('/enrollment-certificate/', {
     params: { cui }
   })
 }
